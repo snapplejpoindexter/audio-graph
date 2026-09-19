@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>iPhone Audio Signal Graph</title>
+
+  <style>
+    body {
+      margin: 20px;
+      background: #111;
+      color: white;
+      font-family: sans-serif;
+      text-align: center;
+    }
+
+    button {
+      font-size: 18px;
+      padding: 12px 20px;
+      margin: 5px;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      max-width: 900px;
+      height: 220px;
+      margin: 15px auto;
+      background: black;
+      border: 1px solid #555;
+    }
+
+    #frequency {
+      font-size: 22px;
+      color: #40ff80;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>Microphone Signal Analyzer</h2>
+
+  <button id="startButton">Start microphone</button>
+  <button id="stopButton" disabled>Stop</button>
+
+  <p id="frequency">Frequency: -- Hz</p>
+
+  <h3>Waveform</h3>
+  <canvas id="waveform" width="900" height="220"></canvas>
+
+  <h3>Frequency spectrum</h3>
+  <canvas id="spectrum" width="900" height="220"></canvas>
+
+  <script>
+    let audioContext;
+    let microphone;
+    let analyser;
+    let animationFrame;
+    let stream;
+
+    const startButton = document.getElementById("startButton");
+    const stopButton = document.getElementById("stopButton");
+    const frequencyText = document.getElementById("frequency");
+
+    const waveformCanvas = document.getElementById("waveform");
+    const spectrumCanvas = document.getElementById("spectrum");
+
+    const waveformContext = waveformCanvas.getContext("2d");
+    const spectrumContext = spectrumCanvas.getContext("2d");
+
+    startButton.addEventListener("click", startMicrophone);
+    stopButton.addEventListener("click", stopMicrophone);
+
+    async function startMicrophone() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          }
+        });
+
+        audioContext = new (
+          window.AudioContext || window.webkitAudioContext
+        )();
+
+        microphone = audioContext.createMediaStreamSource(stream);
+
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 4096;
+        analyser.smoothingTimeConstant = 0.1;
+
+        microphone.connect(analyser);
+
+        startButton.disabled = true;
+        stopButton.disabled = false;
+
+        drawGraphs();
+
+      } catch (error) {
+        alert("Microphone access failed: " + error.message);
+      }
+    }
+
+    function stopMicrophone() {
+      cancelAnimationFrame(animationFrame);
+
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+
+      if (audioContext) {
+        audioContext.close();
+      }
+
+      startButton.disabled = false;
+      stopButton.disabled = true;
+      frequencyText.textContent = "Frequency: -- Hz";
+
+      clearCanvas(waveformContext, waveformCanvas);
+      clearCanvas(spectrumContext, spectrumCanvas);
+    }
+
+    function drawGraphs() {
+      animationFrame = requestAnimationFrame(drawGraphs);
+
+      drawWaveform();
+      drawSpectrum();
+    }
+
+    function drawWaveform() {
+      const data = new Uint8Array(analyser.fftSize);
+      analyser.getByteTimeDomainData(data);
+
+      const width = waveformCanvas.width;
+      const height = waveformCanvas.height;
+
+      waveformContext.fillStyle = "black";
+      waveformContext.fillRect(0, 0, width, height);
+
+      waveformContext.strokeStyle = "#40ff80";
+      waveformContext.lineWidth = 2;
+      waveformContext.beginPath();
+
+      for (let i = 0; i < data.length; i++) {
+        const x = i * width / data.length;
+        const y = (data[i] / 255) * height;
+
+        if (i === 0) {
+          waveformContext.moveTo(x, y);
+        } else {
+          waveformContext.lineTo(x, y);
+        }
+      }
+
+      waveformContext.stroke();
+    }
+
+    function drawSpectrum() {
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(data);
+
+      const width = spectrumCanvas.width;
+      const height = spectrumCanvas.height;
+
+      spectrumContext.fillStyle = "black";
+      spectrumContext.fillRect(0, 0, width, height);
+
+      const barWidth = width / data.length;
+
+      for (let i = 0; i < data.length; i++) {
+        const barHeight = data[i] / 255 * height;
+        const x = i * barWidth;
+        const y = height - barHeight;
+
+        spectrumContext.fillStyle = "#40a0ff";
+        spectrumContext.fillRect(
+          x,
+          y,
+          Math.max(1, barWidth),
+          barHeight
+        );
+      }
+
+      const peakIndex = findPeak(data);
+      const frequency = peakIndex * audioContext.sampleRate /
+                        analyser.fftSize;
+
+      frequencyText.textContent =
+        "Strongest frequency: " + frequency.toFixed(1) + " Hz";
+    }
+
+    function findPeak(data) {
+      let peakIndex = 0;
+      let peakValue = 0;
+
+      // Ignore the very lowest frequencies
+      for (let i = 2; i < data.length; i++) {
+        if (data[i] > peakValue) {
+          peakValue = data[i];
+          peakIndex = i;
+        }
+      }
+
+      return peakIndex;
+    }
+
+    function clearCanvas(context, canvas) {
+      context.fillStyle = "black";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+    }
+  </script>
+</body>
+</html>
