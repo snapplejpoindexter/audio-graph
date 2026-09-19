@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bluetooth LE Scanner</title>
+</head>
+<body>
+  <h2>Bluetooth LE Scanner</h2>
+
+  <button id="scanButton">Find Bluetooth device</button>
+  <pre id="output">No device selected.</pre>
+
+  <script>
+    const scanButton = document.getElementById("scanButton");
+    const output = document.getElementById("output");
+
+    scanButton.addEventListener("click", async () => {
+      if (!("bluetooth" in navigator)) {
+        output.textContent =
+          "Web Bluetooth is not supported by this browser.";
+        return;
+      }
+
+      try {
+        output.textContent = "Choose a Bluetooth LE device...";
+
+        const device = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true
+        });
+
+        output.textContent =
+          "Device found:\n\n" +
+          "Name: " + (device.name || "Unknown") + "\n" +
+          "ID: " + device.id;
+
+        device.addEventListener("gattserverdisconnected", () => {
+          output.textContent += "\n\nDevice disconnected.";
+        });
+
+      } catch (error) {
+        output.textContent = "Error: " + error.message;
+      }
+    });
+  </script>
+</body>
+</html>
